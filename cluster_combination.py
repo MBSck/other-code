@@ -1,49 +1,42 @@
 import shutil
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
-from astropy.wcs import WCS
 from tqdm import tqdm
 from spectral_cube import SpectralCube
 
 
-def get_clusters(cluster: Path) -> Dict:
+def get_clusters(cluster: np.ndarray):
     """Reads the clusters' information from a (.fits)-file."""
     cluster_ids = np.unique(cluster[cluster != -1])
     cluster_indices = [np.where(cluster == cluster_id)
-                       for cluser_id in tqdm(cluster_ids, "Check")]
+                       for cluster_id in cluster_ids]
     return cluster_ids, cluster_indices
 
 
-# def check_intersect(coordinate_range: CoordinateRange,
-                    # shifted_coordinate: np.ndarray) -> bool:
-    # """Checks if there is an intersect between the clusters."""
-    # latitude, longitude = shifted_coordinate[0], shifted_coordinate[1]
-    # in_latitude = np.logical_and(coordinate_range.lat_min <= latitude, 
-                                 # coordinate_range.lat_max >= latitude)
-    # in_longitude = np.logical_and(coordinate_range.lon_min <= longitude,
-                                  # coordinate_range.lon_max >= longitude)
-    # return np.any(np.logical_and(in_latitude, in_longitude))
+def check_overlap(indices: np.ndarray,
+                  shifted_indices: np.ndarray) -> bool:
+    """Checks if there is an intersect between the clusters."""
+    in_longitude = np.logical_and(shifted_indices[0] >= indices[0].min(),
+                                  shifted_indices[0] <= indices[0].max())
+    in_latitude = np.logical_and(shifted_indices[1] >= indices[1].min(),
+                                 shifted_indices[1] <= indices[1].max())
+    in_both = np.logical_and(in_longitude, in_latitude)
+    return np.any(in_both)
 
 
-def get_indices(coordinate: np.ndarray, w: WCS) -> np.ndarray:
-    """Gets indices from world coordinates."""
-    indices = w.all_world2pix(*coordinate, 0, 0)[:2]
-    return [np.array(list(map(int, indices[0]))),
-            np.array(list(map(int, indices[1])))]
-
-
-def add_non_overlapping_clusters(
-        output: np.ndarray, w: WCS,
-        cluster_coordinates: np.ndarray, cluster_ids: np.ndarray) -> None:
-    """Sets the clusters in a (.fits)-file from a list of clusters."""
-    for cluster_index, cluster_id in enumerate(cluster_ids):
-        coordinate = cluster_coordinates[cluster_index]
-        if coordinate[0].size == 0:
-            continue
-        indices = get_indices(coordinate, w)
-        output[indices] = cluster_id
+def write_non_overlap_clusters(combined: np.ndarray,
+                               cluster_indices: np.ndarray,
+                               cluster_ids: np.ndarray) -> None:
+    """Writes the non-overlapping clusters in a (.fits)-file
+    from a list of clusters.
+    """
+    if cluster_indices is None:
+        return
+    if cluster_indices[0].size == 0:
+        return
+    for indices, cluster_id in zip(cluster_indices, cluster_ids):
+        combined[indices] = cluster_id
 
 
 def combine_runs(combined_file: np.ndarray,
@@ -58,40 +51,38 @@ def combine_runs(combined_file: np.ndarray,
     combined = SpectralCube.read(combined_file)
 
     for slice_index in tqdm(range(combined.shape[0]), "Remove overlap Clusters"):
-        original_cluster_ids, original_indices = get_clusters(
-            cluster[slice_index].value)
-        shifted_cluster_ids, shifted_indices = get_clusters(
-            cluster_shifted[slice_index].value)
-        breakpoint()
-        original_cluster_ids_copy = original_cluster_ids.copy().tolist()
-        shifted_cluster_ids_copy = shifted_cluster_ids.copy().tolist()
-        for original_cluster_index, original_cluster_id in enumerate(original_cluster_ids):
-            original_coordinate = original_slice_coordinates[original_cluster_index]
-            if original_coordinate[0].size == 0:
-                continue
-            # coordinate_range = CoordinateRange(original_coordinate)
-            # for shifted_cluster_index, shifted_cluster_id in enumerate(shifted_cluster_ids):
-                # shifted_coordinate = shifted_slice_coordinates[shifted_cluster_index]
-                # if shifted_coordinate[0].size == 0:
-                    # continue
-                # if check_intersect(coordinate_range, shifted_coordinate):
-                    # indices_first = get_indices(original_coordinate, w)
-                    # indices_second = get_indices(shifted_coordinate, w)
-                    # if original_coordinate[0].size < shifted_coordinate[0].size:
-                        # combined[slice_index][indices_first] = -1
-                        # combined[slice_index][indices_second] = shifted_cluster_id
-                    # else:
-                        # combined[slice_index][indices_first] = original_cluster_id
-                        # combined[slice_index][indices_second] = -1
-                    # if original_cluster_id in original_cluster_ids_copy:
-                        # original_cluster_ids_copy.remove(original_cluster_id)
-                    # if shifted_cluster_id in shifted_cluster_ids_copy:
-                        # shifted_cluster_ids_copy.remove(shifted_cluster_id)
+        original_ids, original_indices = get_clusters(cluster[slice_index].value)
+        shifted_ids, shifted_indices = get_clusters(cluster_shifted[slice_index].value)
+        original_ids_copy = original_ids.copy().tolist()
+        shifted_ids_copy = shifted_ids.copy().tolist()
+        
+        original_cluster_indices = None
+        shifted_cluster_indices = None
 
-        add_non_overlapping_clusters(combined, w, slice_index,
-                                     original_slice_coordinates, original_cluster_ids_copy)
-        add_non_overlapping_clusters(combined, w, slice_index,
-                                     shifted_slice_coordinates, shifted_cluster_ids_copy)
+        for original_index, original_id in enumerate(original_ids):
+            original_cluster_indices = original_indices[original_index]
+            if original_cluster_indices[0].size == 0:
+                continue
+
+            for shifted_index, shifted_id in enumerate(shifted_ids):
+                shifted_cluster_indices = shifted_indices[shifted_index]
+                if shifted_cluster_indices[0].size == 0:
+                    continue
+                if check_overlap(original_cluster_indices, shifted_cluster_indices):
+                    if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
+                        combined[slice_index][original_cluster_indices] = original_id
+                    else:
+                        combined[slice_index][shifted_cluster_indices] = shifted_id
+
+                    if original_id in original_ids_copy:
+                        original_ids_copy.remove(original_id)
+                    if shifted_id in shifted_ids_copy:
+                        shifted_ids_copy.remove(shifted_id)
+
+        write_non_overlap_clusters(
+                combined[slice_index], original_cluster_indices, original_ids_copy)
+        write_non_overlap_clusters(
+                combined[slice_index], shifted_cluster_indices, shifted_ids_copy)
 
 
 if __name__ == "__main__":
