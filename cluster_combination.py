@@ -38,16 +38,21 @@ def set_adjacent(cluster_ids: np.ndarray,
     new_cluster_ids, new_cluster_indices = [], []
     for cluster_id, other_cluster_ids in clusters_to_merge.items():
         if cluster_id in all_cluster_ids:
-            current_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]])]
+            tmp_list = []
+            current_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]]
             new_cluster_ids.append(cluster_id)
             all_cluster_ids.remove(cluster_id)
+            tmp_list.append(current_indices)
             for other_cluster_id in other_cluster_ids:
-                if other_cluster_id in all_cluster_ids:
+                if cluster_id != other_cluster_id\
+                   and other_cluster_id in all_cluster_ids:
                     all_cluster_ids.remove(other_cluster_id)
-                    other_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]])]
-            new_cluster_indices.append(np.vstack(np.concatenate((current_indices, other_indices))))
-    breakpoint()
-    return cluster_ids, cluster_indices
+                    other_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]]
+                    tmp_list.append(other_indices)
+        stacked_list = np.hstack(tmp_list)
+        new_cluster_indices.append([stacked_list[0], stacked_list[1]])
+
+    return np.array(new_cluster_ids), new_cluster_indices
 
 
 def get_clusters(cluster: np.ndarray):
@@ -100,6 +105,7 @@ def combine_runs(combined_file: np.ndarray,
         shifted_ids, shifted_indices = get_clusters(cluster_shifted[slice_index].value)
         if original_indices is None or shifted_indices is None:
             continue
+
         original_ids_copy = original_ids.copy().tolist()
         shifted_ids_copy = shifted_ids.copy().tolist()
 
@@ -111,25 +117,29 @@ def combine_runs(combined_file: np.ndarray,
             if original_cluster_indices[0].size == 0:
                 continue
 
-            for shifted_index, shifted_id in enumerate(shifted_ids):
-                shifted_cluster_indices = shifted_indices[shifted_index]
-                if shifted_cluster_indices[0].size == 0:
-                    continue
-                if check_intersect(original_cluster_indices, shifted_cluster_indices):
-                    if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
-                        combined_slice[original_cluster_indices] = original_id
-                    else:
-                        combined_slice[shifted_cluster_indices] = shifted_id
+            combined_slice[original_cluster_indices[0],
+                           original_cluster_indices[1]] = original_id
 
-                    if original_id in original_ids_copy:
-                        original_ids_copy.remove(original_id)
-                    if shifted_id in shifted_ids_copy:
-                        shifted_ids_copy.remove(shifted_id)
+            # for shifted_index, shifted_id in enumerate(shifted_ids):
+                # shifted_cluster_indices = shifted_indices[shifted_index]
+                # if shifted_cluster_indices[0].size == 0:
+                    # continue
 
-        write_non_overlap_clusters(
-                combined_slice, original_cluster_indices, original_ids_copy)
-        write_non_overlap_clusters(
-                combined_slice, shifted_cluster_indices, shifted_ids_copy)
+                # if check_intersect(original_cluster_indices, shifted_cluster_indices):
+                    # if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
+                        # combined_slice[original_cluster_indices] = original_id
+                    # else:
+                        # combined_slice[shifted_cluster_indices] = shifted_id
+
+                    # if original_id in original_ids_copy:
+                        # original_ids_copy.remove(original_id)
+                    # if shifted_id in shifted_ids_copy:
+                        # shifted_ids_copy.remove(shifted_id)
+
+        # write_non_overlap_clusters(
+                # combined_slice, original_cluster_indices, original_ids_copy)
+        # write_non_overlap_clusters(
+                # combined_slice, shifted_cluster_indices, shifted_ids_copy)
 
 
 if __name__ == "__main__":
