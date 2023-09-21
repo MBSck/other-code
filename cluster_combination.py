@@ -32,7 +32,7 @@ def set_adjacent(cluster_ids: np.ndarray,
     all_cluster_ids = cluster_ids.copy().tolist()
     for cluster_id, other_cluster_ids in clusters_to_merge.items():
         if cluster_id in all_cluster_ids:
-            tmp_indices = cluster_indices[np.where(cluster_ids == cluster_id)]
+            tmp_indices = cluster_indices[int(*np.where(cluster_ids == cluster_id)[0])]
             new_cluster_ids.append(cluster_id)
             all_cluster_ids.remove(cluster_id)
             for other_cluster_id in other_cluster_ids:
@@ -41,6 +41,8 @@ def set_adjacent(cluster_ids: np.ndarray,
         # TODO: Include merging of lists here.
         else:
             continue
+    print(all_cluster_ids)
+    print(clusters_to_merge)
 
     return cluster_ids, cluster_indices
 
@@ -89,7 +91,7 @@ def combine_runs(combined_file: np.ndarray,
     cluster_shifted = SpectralCube.read(cluster_shifted_path)
     combined = SpectralCube.read(combined_file)
 
-    for slice_index in tqdm(range(combined.shape[0]), "Remove overlap Clusters"):
+    for slice_index in tqdm(range(combined.shape[0]), "Remove overlapping clusters"):
         combined_slice = combined[slice_index].value
         original_ids, original_indices = get_clusters(cluster[slice_index].value)
         shifted_ids, shifted_indices = get_clusters(cluster_shifted[slice_index].value)
