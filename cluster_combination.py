@@ -7,43 +7,46 @@ from tqdm import tqdm
 from spectral_cube import SpectralCube
 
 
+def are_adjacent(point1: tuple, point2: tuple) -> bool:
+   """Check if two points are adjacent."""
+   return abs(point1[0] - point2[0]) <= 1 and abs(point1[1] - point2[1]) <= 1
+
+
 def check_adjacent(indices_set: Set, other_indices_set: Set) -> bool:
-    """Checks if any of the pixels in the sets are adjacent."""
-    adjacencies = []
-    for count, index in enumerate(indices_set):
-        adjacencies.append([])
+    """Check if any of the pixels in the sets are adjacent."""
+    for index in indices_set:
         for other_index in other_indices_set:
-            adjacencies[count].append(abs(index[0]-other_index[0]) < 1
-                                      and abs(index[1]-other_index[1]) < 1)
-    return np.any(adjacencies)
+            if are_adjacent(index, other_index):
+                return True
+    return False
 
 
 def set_adjacent(cluster_ids: np.ndarray,
                  cluster_indices: np.ndarray) -> None:
     """Checks if any indices are adjacent"""
     clusters_to_merge = {cluster_id: [] for cluster_id in cluster_ids}
+    all_cluster_ids = set(cluster_ids.copy())
+
     for cluster_id, indices in zip(cluster_ids, cluster_indices):
-        indices_set = set(zip(*indices))
+        current_indices = set(zip(*indices))
         for other_cluster_id, other_indices in zip(cluster_ids, cluster_indices):
-            other_indices_set = set(zip(*other_indices))
-            if check_adjacent(indices_set, other_indices_set):
-                clusters_to_merge[cluster_id].append(other_cluster_id)
+            if cluster_id != other_cluster_id:
+                comparison_indices = set(zip(*other_indices))
+                if check_adjacent(current_indices, comparison_indices):
+                    clusters_to_merge[cluster_id].append(other_cluster_id)
+
     new_cluster_ids, new_cluster_indices = [], []
-    all_cluster_ids = cluster_ids.copy().tolist()
     for cluster_id, other_cluster_ids in clusters_to_merge.items():
         if cluster_id in all_cluster_ids:
-            tmp_indices = cluster_indices[int(*np.where(cluster_ids == cluster_id)[0])]
+            current_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]])]
             new_cluster_ids.append(cluster_id)
             all_cluster_ids.remove(cluster_id)
             for other_cluster_id in other_cluster_ids:
                 if other_cluster_id in all_cluster_ids:
                     all_cluster_ids.remove(other_cluster_id)
-        # TODO: Include merging of lists here.
-        else:
-            continue
-    print(all_cluster_ids)
-    print(clusters_to_merge)
-
+                    other_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]])]
+            new_cluster_indices.append(np.vstack(np.concatenate((current_indices, other_indices))))
+    breakpoint()
     return cluster_ids, cluster_indices
 
 
