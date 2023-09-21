@@ -9,7 +9,9 @@ from spectral_cube import SpectralCube
 
 def get_clusters(cluster: np.ndarray):
     """Reads the clusters' information from a (.fits)-file."""
-    cluster, _ = label(cluster != -1)
+    if cluster[cluster != -1].size == 0:
+        return None, None
+    label(cluster != -1, output=cluster)
     cluster_ids = np.unique(cluster[cluster != -1])
     cluster_indices = [np.where(cluster == cluster_id)
                        for cluster_id in cluster_ids]
@@ -50,11 +52,14 @@ def combine_runs(combined_file: np.ndarray,
     combined = SpectralCube.read(combined_file)
 
     for slice_index in tqdm(range(combined.shape[0]), "Remove overlap Clusters"):
+        combined_slice = combined[slice_index].value
         original_ids, original_indices = get_clusters(cluster[slice_index].value)
         shifted_ids, shifted_indices = get_clusters(cluster_shifted[slice_index].value)
+        if original_indices is None or shifted_indices is None:
+            continue
         original_ids_copy = original_ids.copy().tolist()
         shifted_ids_copy = shifted_ids.copy().tolist()
-        
+
         original_cluster_indices = None
         shifted_cluster_indices = None
 
@@ -69,9 +74,9 @@ def combine_runs(combined_file: np.ndarray,
                     continue
                 if check_intersect(original_cluster_indices, shifted_cluster_indices):
                     if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
-                        combined[slice_index][original_cluster_indices] = original_id
+                        combined_slice[original_cluster_indices] = original_id
                     else:
-                        combined[slice_index][shifted_cluster_indices] = shifted_id
+                        combined_slice[shifted_cluster_indices] = shifted_id
 
                     if original_id in original_ids_copy:
                         original_ids_copy.remove(original_id)
@@ -79,9 +84,9 @@ def combine_runs(combined_file: np.ndarray,
                         shifted_ids_copy.remove(shifted_id)
 
         write_non_overlap_clusters(
-                combined[slice_index], original_cluster_indices, original_ids_copy)
+                combined_slice, original_cluster_indices, original_ids_copy)
         write_non_overlap_clusters(
-                combined[slice_index], shifted_cluster_indices, shifted_ids_copy)
+                combined_slice, shifted_cluster_indices, shifted_ids_copy)
 
 
 if __name__ == "__main__":
@@ -90,5 +95,5 @@ if __name__ == "__main__":
     shifted_cluster_path = data_dir / "clusters_run_02.fits"
     combined_clusters_path = data_dir / "final_clusters_cube.fits"
     combined_clusters_path_copy = data_dir / "final_clusters_cube_copy.fits"
-    shutil.copyfile(combined_clusters_path, combined_clusters_path_copy)
+    # shutil.copyfile(combined_clusters_path, combined_clusters_path_copy)
     combine_runs(combined_clusters_path_copy, cluster_path, shifted_cluster_path)
