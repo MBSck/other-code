@@ -3,26 +3,25 @@ from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
+from scipy.ndimage import label
 from spectral_cube import SpectralCube
 
 
 def get_clusters(cluster: np.ndarray):
     """Reads the clusters' information from a (.fits)-file."""
+    cluster, _ = label(cluster != -1)
     cluster_ids = np.unique(cluster[cluster != -1])
     cluster_indices = [np.where(cluster == cluster_id)
                        for cluster_id in cluster_ids]
     return cluster_ids, cluster_indices
 
 
-def check_overlap(indices: np.ndarray,
-                  shifted_indices: np.ndarray) -> bool:
+def check_intersect(indices: np.ndarray,
+                    shifted_indices: np.ndarray) -> bool:
     """Checks if there is an intersect between the clusters."""
-    in_longitude = np.logical_and(shifted_indices[0] >= indices[0].min(),
-                                  shifted_indices[0] <= indices[0].max())
-    in_latitude = np.logical_and(shifted_indices[1] >= indices[1].min(),
-                                 shifted_indices[1] <= indices[1].max())
-    in_both = np.logical_and(in_longitude, in_latitude)
-    return np.any(in_both)
+    indices = set(zip(*indices))
+    shifted_indices = set(zip(*shifted_indices))
+    return indices.intersection(shifted_indices)
 
 
 def write_non_overlap_clusters(combined: np.ndarray,
@@ -68,7 +67,7 @@ def combine_runs(combined_file: np.ndarray,
                 shifted_cluster_indices = shifted_indices[shifted_index]
                 if shifted_cluster_indices[0].size == 0:
                     continue
-                if check_overlap(original_cluster_indices, shifted_cluster_indices):
+                if check_intersect(original_cluster_indices, shifted_cluster_indices):
                     if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
                         combined[slice_index][original_cluster_indices] = original_id
                     else:
