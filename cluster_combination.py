@@ -3,15 +3,23 @@ from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
-from scipy.ndimage import label
 from spectral_cube import SpectralCube
+
+
+def set_adjacent(indices: np.ndarray) -> None:
+    """Checks if any indices are adjacent"""
+    indices = set(zip(*indices))
+    for index in indices[:-1]:
+        for other_index in indices[1:]:
+            distance = abs(index[0] - other_index[0]) <= 1\
+                    and abs(index[1] - other_index[1]) <= 1
+            if distance:
 
 
 def get_clusters(cluster: np.ndarray):
     """Reads the clusters' information from a (.fits)-file."""
     if cluster[cluster != -1].size == 0:
         return None, None
-    label(cluster != -1, output=cluster)
     cluster_ids = np.unique(cluster[cluster != -1])
     cluster_indices = [np.where(cluster == cluster_id)
                        for cluster_id in cluster_ids]
