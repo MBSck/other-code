@@ -15,8 +15,6 @@ def remove_edge_clusters(cluster: Path, output_dir: Path,
     Removes the clusters that (in any channel) contact the left
     or right edges of the frame.
     """
-    if not output_dir.exists():
-        output_dir.mkdir()
     output_file = output_dir / f"no_edge_{cluster.name}"
     shutil.copyfile(cluster, output_file)
 
@@ -31,6 +29,23 @@ def remove_edge_clusters(cluster: Path, output_dir: Path,
     data[np.isin(data, edge_clusters)] = -1
     with fits.open(output_file, "update") as hdul_out:
         hdul_out[0].data = data
+
+
+def run_edge_removal(run_dir: Path)
+    """Runs the edge removal for a run."""
+    run_paths = sorted(list(run_dir.glob("*.fits")), key=lambda x: x.stem)
+    ouput_dir = run_dir / "no_edge"
+    if not output_dir.exists():
+        output_dir.mkdir()
+
+    for index, cube in tqdm(enumerate(run_paths), "First run"):
+        if index == 0:
+            edges_to_remove = ["right"]
+        elif index == len(run_paths)-1:
+            edges_to_remove = ["left"]
+        else:
+            edges_to_remove = ["left", "right"]
+        remove_edge_clusters(cube, output_dir, edges_to_remove)
 
 
 def get_clusters(cluster: np.ndarray):
@@ -114,25 +129,9 @@ def combine_runs(combined_file: np.ndarray,
 
 
 if __name__ == "__main__":
-    first_run = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube/sub_cubes")
-    first_run_paths = sorted(list(first_run.glob("*.fits")), key=lambda x: x.stem)
-    for index, cube in tqdm(enumerate(first_run_paths), "First run"):
-        if index == 0:
-            edges_to_remove = ["right"]
-        elif index == len(first_run_paths)-1:
-            edges_to_remove = ["left"]
-        else:
-            edges_to_remove = ["left", "right"]
-        remove_edge_clusters(cube, first_run / "no_edge", edges_to_remove)
-
-    second_run = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube/sub_cubes/second_run")
-    second_run_paths = sorted(list(second_run.glob("*.fits")), key=lambda x: x.stem)
-    for cube in tqdm(second_run.glob("*.fits"), "Second run"):
-        if index == 0:
-            edges_to_remove = ["right"]
-        elif index == len(first_run_paths)-1:
-            edges_to_remove = ["left"]
-        else:
-            edges_to_remove = ["left", "right"]
-        remove_edge_clusters(cube, second_run / "no_edge", edges_to_remove)
+    data_dir = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube/")
+    first_run = data_dir / "first_run"
+    second_run = data_dir / "second_run"
+    run_edge_removal(first_run)
+    run_edge_removal(second_run)
 
