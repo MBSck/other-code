@@ -1,58 +1,30 @@
 import shutil
 from pathlib import Path
-from typing import Set
 
 import numpy as np
-from tqdm import tqdm
+from astropy.io import fits
 from spectral_cube import SpectralCube
+from tqdm import tqdm
 
 
-def are_adjacent(point1: tuple, point2: tuple) -> bool:
-   """Check if two points are adjacent."""
-   return abs(point1[0] - point2[0]) <= 1 and abs(point1[1] - point2[1]) <= 1
-
-
-def check_adjacent(indices_set: Set, other_indices_set: Set) -> bool:
-    """Check if any of the pixels in the sets are adjacent."""
-    for index in indices_set:
-        for other_index in other_indices_set:
-            if are_adjacent(index, other_index):
-                return True
-    return False
-
-
-def set_adjacent(cluster_ids: np.ndarray,
-                 cluster_indices: np.ndarray) -> None:
-    """Checks if any indices are adjacent"""
-    clusters_to_merge = {cluster_id: [] for cluster_id in cluster_ids}
-    all_cluster_ids = set(cluster_ids.copy())
-
-    for cluster_id, indices in zip(cluster_ids, cluster_indices):
-        current_indices = set(zip(*indices))
-        for other_cluster_id, other_indices in zip(cluster_ids, cluster_indices):
-            if cluster_id != other_cluster_id:
-                comparison_indices = set(zip(*other_indices))
-                if check_adjacent(current_indices, comparison_indices):
-                    clusters_to_merge[cluster_id].append(other_cluster_id)
-
-    new_cluster_ids, new_cluster_indices = [], []
-    for cluster_id, other_cluster_ids in clusters_to_merge.items():
-        if cluster_id in all_cluster_ids:
-            tmp_list = []
-            current_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]]
-            new_cluster_ids.append(cluster_id)
-            all_cluster_ids.remove(cluster_id)
-            tmp_list.append(current_indices)
-            for other_cluster_id in other_cluster_ids:
-                if cluster_id != other_cluster_id\
-                   and other_cluster_id in all_cluster_ids:
-                    all_cluster_ids.remove(other_cluster_id)
-                    other_indices = cluster_indices[np.where(cluster_ids == cluster_id)[0][0]]
-                    tmp_list.append(other_indices)
-        stacked_list = np.hstack(tmp_list)
-        new_cluster_indices.append([stacked_list[0], stacked_list[1]])
-
-    return np.array(new_cluster_ids), new_cluster_indices
+def remove_edge_clusters(cluster: Path, output_dir: Path) -> None:
+    """Creates a (.fits)-file without clusters at the edges
+    of the cubes.
+    Removes the clusters that (in any channel) contact the left
+    or right edges of the frame.
+    """
+    if not output_dir.exists():
+        output_dir.mkdir()
+    output_file = cluster.parent / f"no_edge_{cluster.name}"
+    shutil.copyfile(cluster, output_dir / output_file)
+    with fits.open(cluster) as hdul:
+        data = hdul[0].data
+    right_edge_clusters = data[:, :, -1][data[:, :, -1] != -1]
+    left_edge_clusters = data[:, :, 0][data[:, :, 0] != -1]
+    edge_clusters = np.unique(np.concatenate((right_edge_clusters, left_edge_clusters)))
+    data[np.isin(data, edge_clusters)] = -1
+    with fits.open(output_dir / output_file, "update") as hdul_out:
+        hdul_out[0].data = data
 
 
 def get_clusters(cluster: np.ndarray):
@@ -62,7 +34,6 @@ def get_clusters(cluster: np.ndarray):
     cluster_ids = np.unique(cluster[cluster != -1])
     cluster_indices = [np.where(cluster == cluster_id)
                        for cluster_id in cluster_ids]
-    cluster_ids, cluster_indices = set_adjacent(cluster_ids, cluster_indices)
     return cluster_ids, cluster_indices
 
 
@@ -106,47 +77,38 @@ def combine_runs(combined_file: np.ndarray,
         if original_indices is None or shifted_indices is None:
             continue
 
-        original_ids_copy = original_ids.copy().tolist()
-        shifted_ids_copy = shifted_ids.copy().tolist()
-
-        original_cluster_indices = None
-        shifted_cluster_indices = None
+        original_ids_set, shifted_ids_set = set(original_ids), set(shifted_ids)
+        original_cluster_indices, shifted_cluster_indices = None, None
 
         for original_index, original_id in enumerate(original_ids):
             original_cluster_indices = original_indices[original_index]
             if original_cluster_indices[0].size == 0:
                 continue
 
-            combined_slice[original_cluster_indices[0],
-                           original_cluster_indices[1]] = original_id
+            for shifted_index, shifted_id in enumerate(shifted_ids):
+                shifted_cluster_indices = shifted_indices[shifted_index]
+                if shifted_cluster_indices[0].size == 0:
+                    continue
 
-            # for shifted_index, shifted_id in enumerate(shifted_ids):
-                # shifted_cluster_indices = shifted_indices[shifted_index]
-                # if shifted_cluster_indices[0].size == 0:
-                    # continue
+                if check_intersect(original_cluster_indices, shifted_cluster_indices):
+                    if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
+                        combined_slice[original_cluster_indices] = original_id
+                    else:
+                        combined_slice[shifted_cluster_indices] = shifted_id
 
-                # if check_intersect(original_cluster_indices, shifted_cluster_indices):
-                    # if original_cluster_indices[0].size > shifted_cluster_indices[0].size:
-                        # combined_slice[original_cluster_indices] = original_id
-                    # else:
-                        # combined_slice[shifted_cluster_indices] = shifted_id
+                    if original_id in original_ids_set:
+                        original_ids_set.remove(original_id)
+                    if shifted_id in shifted_ids_set:
+                        shifted_ids_set.remove(shifted_id)
 
-                    # if original_id in original_ids_copy:
-                        # original_ids_copy.remove(original_id)
-                    # if shifted_id in shifted_ids_copy:
-                        # shifted_ids_copy.remove(shifted_id)
-
-        # write_non_overlap_clusters(
-                # combined_slice, original_cluster_indices, original_ids_copy)
-        # write_non_overlap_clusters(
-                # combined_slice, shifted_cluster_indices, shifted_ids_copy)
+        write_non_overlap_clusters(
+                combined_slice, original_cluster_indices, original_ids_set)
+        write_non_overlap_clusters(
+                combined_slice, shifted_cluster_indices, shifted_ids_set)
 
 
 if __name__ == "__main__":
-    data_dir = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube")
-    cluster_path = data_dir / "clusters_run_01.fits"
-    shifted_cluster_path = data_dir / "clusters_run_02.fits"
-    combined_clusters_path = data_dir / "final_clusters_cube.fits"
-    combined_clusters_path_copy = data_dir / "final_clusters_cube_copy.fits"
-    # shutil.copyfile(combined_clusters_path, combined_clusters_path_copy)
-    combine_runs(combined_clusters_path_copy, cluster_path, shifted_cluster_path)
+    data_dir = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube/sub_cubes")
+    for cube in data_dir.glob("*.fits"):
+        remove_edge_clusters(cube, data_dir / "no_edge")
+
