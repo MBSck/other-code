@@ -152,8 +152,7 @@ def combine_runs(cluster_file: Path,
     cluster_shifted = SpectralCube.read(cluster_shifted_path)
 
     combined_array = []
-    # for slice_index in tqdm(range(combined.shape[0]), "remove overlapping clusters"):
-    for slice_index in tqdm(range(19, 31), "remove overlapping clusters"):
+    for slice_index in tqdm(range(combined.shape[0]), "Remove overlapping clusters"):
         appended, combined_slice = False, -np.ones(cluster[slice_index].shape)
         original_ids, original_indices = get_clusters(cluster[slice_index].value)
         shifted_ids, shifted_indices = get_clusters(cluster_shifted[slice_index].value)
