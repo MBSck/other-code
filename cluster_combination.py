@@ -8,7 +8,7 @@ from spectral_cube import SpectralCube
 from tqdm import tqdm
 
 
-def remove_edge_clusters(cluster: Path, output_dir: Path,
+def remove_edge_clusters(cluster: Path, output_dir: Optional[Path] = None,
                          pixels_from_edge: Optional[int] = 2,
                          edges_to_remove: Optional[List[str]] = ["left", "right"]) -> None:
     """Creates a (.fits)-file without clusters at the edges
@@ -28,6 +28,11 @@ def remove_edge_clusters(cluster: Path, output_dir: Path,
         A list containing either "left" or "right" or both to indicate which edge
         should be checked for clusters that contact it.
     """
+    if output_dir is None:
+        output_dir = cluster.parent / "no_edge"
+    if not output_dir.exists():
+        output_dir.mkdir()
+
     output_file = output_dir / f"no_edge_{cluster.name}"
     shutil.copyfile(cluster, output_file)
 
@@ -46,37 +51,35 @@ def remove_edge_clusters(cluster: Path, output_dir: Path,
         hdul_out[0].data = data
 
 
-def run_edge_removal(run_dir: Path, **kwargs) -> None:
+def run_edge_removal(run_dir: Path,
+                     glob_tag: Optional[str] = "cluster_*.fits",
+                     **kwargs) -> None:
     """Runs the edge removal for a run.
 
     Will create a folder "no_edge" that will contain the individual
-    edge cluster free (.fits)-files.
+    edge cluster free (.fits)-files and one combined file that contains the
+    information of all clusters.
 
     Parameters
     ----------
     run_dir : pathlib.Path
         A directory containing the (.fits)-files corresponding to one run.
+    glob_tag : str, optional
+        The tag that is used to glob the files to be edge removed.
     output_dir: pathlih.Path
         The directory to contain the "no_edge" (.fits)-files.
     pixels_to_edge : int, optional
         The amount of pixels from the edge(s) to be defined "in contact" with it.
-    edges_to_remove : list of str, optional
-        A list containing either "left" or "right" or both to indicate which edge
-        should be checked for clusters that contact it.
     """
-    run_paths = sorted(list(run_dir.glob("*.fits")), key=lambda x: x.stem)
-    output_dir = run_dir / "no_edge"
-    if not output_dir.exists():
-        output_dir.mkdir()
-
-    for index, cube in tqdm(enumerate(run_paths), "First run"):
+    run_paths = sorted(list(run_dir.glob(glob_tag)), key=lambda x: x.stem)
+    for index, cube in tqdm(enumerate(run_paths), "Removing Edges"):
         if index == 0:
             edges_to_remove = ["right"]
         elif index == len(run_paths)-1:
             edges_to_remove = ["left"]
         else:
             edges_to_remove = ["left", "right"]
-        remove_edge_clusters(cube, **kwargs)
+        remove_edge_clusters(cube, edges_to_remove=edges_to_remove, **kwargs)
 
 
 def get_clusters(cluster: np.ndarray):
@@ -204,11 +207,10 @@ def combine_runs(cluster_file: Path,
 
 
 if __name__ == "__main__":
-    data_dir = Path("/data/beegfs/astro-storage/groups/matisse/scheuck/data/cube/")
-    first_run = data_dir / "first_run"
+    data_dir = Path("/data/beegfs/astro-storage/groups/beuther/syed/HISA_study/THOR_survey/hisa_extraction/scimes/cluster_extraction/")
     second_run = data_dir / "second_run"
 
-    run_edge_removal(first_run)
+    # run_edge_removal(data_dir)
     run_edge_removal(second_run)
 
     # first_cluster = data_dir / "all_clusters_run_01.fits"
